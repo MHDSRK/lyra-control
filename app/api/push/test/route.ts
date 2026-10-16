@@ -1,0 +1,2 @@
+import {NextResponse} from 'next/server';import {requireUser} from '@/lib/auth';import {notifyOwner} from '@/lib/notifications';
+export async function POST(){try{await requireUser();await notifyOwner('Lyra Control test','Push notifications are connected.','/');return NextResponse.json({ok:true});}catch(e){if(e instanceof Error&&e.message==='UNAUTHORIZED')return NextResponse.json({error:'Unauthorized'},{status:401});return NextResponse.json({error:'Could not send test notification'},{status:500});}}
