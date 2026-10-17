@@ -16,7 +16,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ inter
     const now = new Date().toISOString();
     const update: Record<string, unknown> = { inbox_status: body.status, updated_at: now };
     if (body.status === 'reviewed') update.reviewed_at = now;
-    if (body.status === 'message_captured') update.message_reviewed_at = now;
+    if (body.status === 'message_captured' || (body.status === 'reviewed' && body.messageReviewed === true)) update.message_reviewed_at = now;
     const { data, error } = await db.from('lyra_calls').update(update).eq('interaction_id', interactionId).select('interaction_id,inbox_status,reviewed_at,message_reviewed_at').maybeSingle();
     if (error) throw error;
     if (!data) return NextResponse.json({ error: 'Call not found' }, { status: 404 });
