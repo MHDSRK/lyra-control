@@ -87,3 +87,16 @@ Deploy this project to Vercel or another Node-compatible HTTPS host. Add all `.e
 - Failure events for calls that never connect may not appear in the inbound end-of-call webhook. The analytics sync is included as a backfill, but you should verify the exact attempts endpoint and response schema for your Sarvam workspace before relying on it for failed-call alerts.
 - iPhone web push requires adding the site to the Home Screen on iOS/iPadOS 16.4 or later, HTTPS, and user permission. Email fallback requires Resend and a verified sender domain.
 - Authentication is private by default: the UI requires Supabase sign-in, and call tables have no direct browser role grants. Keep the service role and provider keys server-side.
+
+
+## Inbox, message capture, notifications and privacy controls
+
+1. Apply `supabase/migrations/20261017_lyra_inbox_privacy.sql` to an existing database. For a fresh database, run `supabase/schema.sql`, which includes the same additions.
+2. Set `OWNER_USER_ID` to the exact Supabase Auth user UUID for the authorized owner, or set `OWNER_EMAIL` to the exact owner email. At least one must be configured. Server-side call, push, settings and delete routes fail closed if the allowlist is missing or does not match.
+3. Configure Lyra/Sarvam output variables for structured message extraction when available: `message_for`, `message_content`, `message_urgency`, and `message_deadline`. The dashboard does not invent a message when these fields are absent. `message_saved` means the structured message was persisted in Lyra's database.
+4. The webhook stores a recording URL only when a valid HTTP(S) URL is present in supported payload/metadata fields. If Sarvam does not provide one, the dashboard shows Recording unavailable and does not render a playback control.
+5. Push and email statuses mean the provider accepted a request; they do not mean the phone displayed it or a person read it. Routine push alerts are off by default and can be enabled in Settings. Urgent, structured-message and technical-failure push alerts remain enabled when push is configured. Important failures also attempt email fallback.
+6. The retention control defaults to `Never auto-delete`. Select 30, 90, 180 or 365 days to enable scheduled deletion of the Lyra database copy. The retention job deletes the call row (including stored transcript and message fields) and associated Lyra notification records. It does not delete the original Sarvam recording or any data retained by Sarvam.
+7. Confirm applicable recording-consent and privacy requirements, lawful basis, and the actual data regions/retention settings for Sarvam and Supabase. This application does not alter provider-side retention or consent configuration.
+
+The inbox status is one of Needs attention, Message captured, Follow-up needed, or Reviewed. New calls default to Needs attention until manually reviewed. The analytics backfill preserves existing manual inbox status and richer webhook fields when the provider response omits them.
