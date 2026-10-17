@@ -34,8 +34,11 @@ export async function GET(req: NextRequest) {
     const recordingUrl = new URL(
       `https://apps.sarvam.ai/api/analytics/v1/${encodeURIComponent(SARVAM_ORG_ID)}/${encodeURIComponent(SARVAM_WORKSPACE_ID)}/${encodeURIComponent(SARVAM_APP_ID)}/recordings/${encodeURIComponent(interactionId)}`
     );
+    const requestHeaders: Record<string, string> = { 'X-API-Key': SARVAM_API_KEY };
+    const rangeRequest = req.headers.get('range');
+    if (rangeRequest) requestHeaders.Range = rangeRequest;
     const response = await fetch(recordingUrl, {
-      headers: { 'X-API-Key': SARVAM_API_KEY },
+      headers: requestHeaders,
       cache: 'no-store',
     });
 
@@ -58,9 +61,11 @@ export async function GET(req: NextRequest) {
     });
     const length = response.headers.get('content-length');
     if (length) headers.set('Content-Length', length);
-    const range = response.headers.get('accept-ranges');
-    if (range) headers.set('Accept-Ranges', range);
-    return new Response(response.body, { status: 200, headers });
+    const acceptRanges = response.headers.get('accept-ranges');
+    if (acceptRanges) headers.set('Accept-Ranges', acceptRanges);
+    const contentRange = response.headers.get('content-range');
+    if (contentRange) headers.set('Content-Range', contentRange);
+    return new Response(response.body, { status: response.status, headers });
   } catch (error) {
     if (error instanceof Error && error.message === 'UNAUTHORIZED') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     if (error instanceof Error && error.message === 'OWNER_ONLY') return NextResponse.json({ error: 'This account is not authorized to access call recordings' }, { status: 403 });
