@@ -65,13 +65,30 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sec
     const failed = duration <= 0;
     const urgent = Boolean(vars.urgent || vars.is_urgent || (vars.follow_up_required && String(vars.priority ?? '').toLowerCase() === 'urgent'));
     const enrichment = extractCallEnrichment(vars, { ...payload, duration }, transcriptText);
+    const { data: existingCall, error: existingError } = await db.from('lyra_calls').select('inbox_status,reviewed_at,message_reviewed_at,message_for,message_for_canonical,message_content,message_saved,message_urgency,message_deadline,recording_url,recording_available,transcript_available,summary_available,received_at,processed_at,owner_aliases_mentioned').eq('interaction_id', payload.interaction_id).maybeSingle();
+    if (existingError) throw existingError;
     const row = {
       interaction_id: payload.interaction_id, caller_number: payload.user_phone_number ?? null,
       agent_number: payload.agent_phone_number ?? null, started_at: payload.start_datetime ?? null,
       ended_at: payload.end_datetime ?? null, duration_seconds: duration, summary: summary || null,
       outcome: outcome || null, transcript, transcript_text: transcriptText || null, agent_variables: vars,
       urgent, failed, end_reason: String(vars.end_reason ?? '') || null, raw_payload: payload,
-      received_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...enrichment,
+      received_at: existingCall?.received_at ?? new Date().toISOString(), updated_at: new Date().toISOString(), ...enrichment,
+      inbox_status: existingCall?.inbox_status ?? enrichment.inbox_status,
+      reviewed_at: existingCall?.reviewed_at ?? null,
+      message_reviewed_at: existingCall?.message_reviewed_at ?? null,
+      message_for: enrichment.message_for ?? existingCall?.message_for ?? null,
+      message_for_canonical: enrichment.message_for_canonical ?? existingCall?.message_for_canonical ?? null,
+      message_content: enrichment.message_content ?? existingCall?.message_content ?? null,
+      message_saved: Boolean(enrichment.message_content || existingCall?.message_saved),
+      message_urgency: enrichment.message_urgency ?? existingCall?.message_urgency ?? null,
+      message_deadline: enrichment.message_deadline ?? existingCall?.message_deadline ?? null,
+      recording_url: enrichment.recording_url ?? existingCall?.recording_url ?? null,
+      recording_available: Boolean(enrichment.recording_url || existingCall?.recording_available),
+      transcript_available: Boolean(enrichment.transcript_available || existingCall?.transcript_available),
+      summary_available: Boolean(enrichment.summary_available || existingCall?.summary_available),
+      processed_at: enrichment.processed_at ?? existingCall?.processed_at ?? new Date().toISOString(),
+      owner_aliases_mentioned: enrichment.owner_aliases_mentioned?.length ? enrichment.owner_aliases_mentioned : existingCall?.owner_aliases_mentioned ?? [],
     };
     stage = 'saving call to Supabase';
     const { error } = await db.from('lyra_calls').upsert(row, { onConflict: 'interaction_id' });
