@@ -29,13 +29,24 @@ export async function GET(req: NextRequest) {
       .eq('interaction_id', interactionId)
       .maybeSingle();
     if (callError) throw callError;
-    if (!call) return NextResponse.json({ error: 'Call not found' }, { status: 404 });
+    if (!call) return NextResponse.json({ error: 'Call not found in Lyra' }, { status: 404 });
 
+    // Sarvam requires interaction IDs in YYYYMMDD/identifier form. Keep the
+    // slash as a path separator (the API also accepts %2F).
+    if (!/^\\d{8}\\/.+/.test(interactionId)) {
+      return NextResponse.json({
+        error: 'This call ID is not in Sarvam’s required YYYYMMDD/identifier format.',
+        interaction_id_format_valid: false,
+      }, { status: 422 });
+    }
+
+    const encodedInteractionId = interactionId.split('/').map(encodeURIComponent).join('/');
     const recordingUrl = new URL(
-      `https://apps.sarvam.ai/api/analytics/v1/${encodeURIComponent(SARVAM_ORG_ID)}/${encodeURIComponent(SARVAM_WORKSPACE_ID)}/${encodeURIComponent(SARVAM_APP_ID)}/recordings/${encodeURIComponent(interactionId)}`
+      `https://apps.sarvam.ai/api/analytics/v1/${encodeURIComponent(SARVAM_ORG_ID)}/${encodeURIComponent(SARVAM_WORKSPACE_ID)}/${encodeURIComponent(SARVAM_APP_ID)}/recordings/${encodedInteractionId}`
     );
+    const diagnostic = req.nextUrl.searchParams.get('check') === '1';
     const requestHeaders: Record<string, string> = { 'X-API-Key': SARVAM_API_KEY };
-    const rangeRequest = req.headers.get('range');
+    const rangeRequest = diagnostic ? 'bytes=0-0' : req.headers.get('range');
     if (rangeRequest) requestHeaders.Range = rangeRequest;
     const response = await fetch(recordingUrl, {
       headers: requestHeaders,
@@ -43,15 +54,36 @@ export async function GET(req: NextRequest) {
     });
 
     if (!response.ok) {
-      if (response.status === 404) return NextResponse.json({ error: 'Sarvam has no recording for this call' }, { status: 404 });
-      if (response.status === 401 || response.status === 403) {
-        console.error('[Sarvam recording] Sarvam rejected recording access', { status: response.status });
-        return NextResponse.json({ error: 'Sarvam denied recording access; check the API key and workspace permissions' }, { status: 502 });
-      }
-      console.error('[Sarvam recording] Sarvam request failed', { status: response.status });
-      return NextResponse.json({ error: 'Could not retrieve recording from Sarvam' }, { status: 502 });
+      let providerDetail = '';
+      try {
+        const body = await response.clone().text();
+        providerDetail = body.slice(0, 500);
+      } catch {}
+      const message = response.status === 400 || response.status === 422
+        ? 'Sarvam rejected the interaction ID format.'
+        : response.status === 401
+          ? 'Sarvam rejected the API key.'
+          : response.status === 403
+            ? 'Sarvam denied access. Check that the API key belongs to this workspace and can access this agent.'
+            : response.status === 404
+              ? 'Sarvam did not find a recording for this interaction ID.'
+              : response.status === 429
+                ? 'Sarvam rate-limited recording retrieval. Try again later.'
+                : `Sarvam recording API returned HTTP ${response.status}.`;
+      console.error('[Sarvam recording] Provider request failed', { status: response.status, interactionId, detail: providerDetail });
+      if (diagnostic) return NextResponse.json({ ok: false, provider_status: response.status, error: message, provider_detail: providerDetail }, { status: 200 });
+      return NextResponse.json({ error: message, provider_status: response.status }, { status: response.status === 404 ? 404 : 502 });
     }
 
+    if (diagnostic) {
+      try { await response.body?.cancel(); } catch {}
+      return NextResponse.json({
+        ok: true,
+        provider_status: response.status,
+        content_type: response.headers.get('content-type') || 'unknown',
+        message: 'Sarvam accepted the recording request.',
+      });
+    }
     if (!response.body) return NextResponse.json({ error: 'Sarvam returned an empty recording' }, { status: 502 });
     const headers = new Headers({
       'Content-Type': response.headers.get('content-type') || 'audio/wav',
