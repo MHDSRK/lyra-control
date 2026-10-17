@@ -1,12 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdmin } from '@/lib/supabase-admin';
-
 export const runtime = 'nodejs';
-
-export async function POST(req: NextRequest) {
-  if (!process.env.CRON_SECRET || req.headers.get('authorization') !== \`Bearer \${process.env.CRON_SECRET}\`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+async function cleanup(req: NextRequest) {
+  if (!process.env.CRON_SECRET || req.headers.get('authorization') !== `Bearer ${process.env.CRON_SECRET}`) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   try {
     const db = createAdmin();
     const { data, error } = await db.from('lyra_settings').select('setting_value').eq('setting_key', 'retention_days').maybeSingle();
@@ -19,7 +15,7 @@ export async function POST(req: NextRequest) {
     const { data: deleted, error: deleteError } = await db.from('lyra_calls').delete().lt('started_at', cutoff).select('interaction_id');
     if (deleteError) throw deleteError;
     return NextResponse.json({ ok: true, deleted: deleted?.length ?? 0, cutoff });
-  } catch {
-    return NextResponse.json({ error: 'Retention cleanup failed' }, { status: 500 });
-  }
+  } catch { return NextResponse.json({ error: 'Retention cleanup failed' }, { status: 500 }); }
 }
+export async function GET(req: NextRequest) { return cleanup(req); }
+export async function POST(req: NextRequest) { return cleanup(req); }
