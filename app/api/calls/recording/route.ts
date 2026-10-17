@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
 
     // Sarvam requires interaction IDs in YYYYMMDD/identifier form. Keep the
     // slash as a path separator (the API also accepts %2F).
-    if (!/^\\d{8}\\/.+/.test(interactionId)) {
+    if (!/^\d{8}\/.+/.test(interactionId)) {
       return NextResponse.json({
         error: 'This call ID is not in Sarvam’s required YYYYMMDD/identifier format.',
         interaction_id_format_valid: false,
