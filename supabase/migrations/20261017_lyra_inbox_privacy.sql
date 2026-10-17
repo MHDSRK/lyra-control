@@ -18,7 +18,7 @@ alter table public.lyra_calls
   add column if not exists owner_aliases_mentioned text[] not null default '{}';
 
 update public.lyra_calls
-set transcript_available = (transcript is not null and jsonb_typeof(transcript) = 'array' and jsonb_array_length(transcript) > 0),
+set transcript_available = case when jsonb_typeof(transcript) = 'array' then jsonb_array_length(transcript) > 0 else false end,
     summary_available = (nullif(trim(coalesce(summary, '')), '') is not null),
     processing_status = 'processed'
 where processing_status = 'received';
