@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
     const requestedRange = !diagnostic ? req.headers.get('range') : null;
     if (requestedRange && response.status === 200) {
       const bytes = new Uint8Array(await response.arrayBuffer());
-      const match = /^bytes=(\\d*)-(\\d*)$/.exec(requestedRange.trim());
+      const match = /^bytes=(\d*)-(\d*)$/.exec(requestedRange.trim());
       if (!match || (!match[1] && !match[2]) || bytes.length === 0) {
         return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${bytes.length}`, 'Accept-Ranges': 'bytes' } });
       }
