@@ -85,16 +85,54 @@ export async function GET(req: NextRequest) {
       });
     }
     if (!response.body) return NextResponse.json({ error: 'Sarvam returned an empty recording' }, { status: 502 });
+
+    // Safari/iOS audio playback relies on byte-range responses for seeking and
+    // can fail when the upstream returns 200 to a Range request. If Sarvam
+    // ignores Range, implement the requested range at this private proxy.
+    const requestedRange = !diagnostic ? req.headers.get('range') : null;
+    if (requestedRange && response.status === 200) {
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      const match = /^bytes=(\\d*)-(\\d*)$/.exec(requestedRange.trim());
+      if (!match || (!match[1] && !match[2]) || bytes.length === 0) {
+        return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${bytes.length}`, 'Accept-Ranges': 'bytes' } });
+      }
+      let start: number;
+      let end: number;
+      if (!match[1]) {
+        const suffixLength = Number(match[2]);
+        start = Math.max(0, bytes.length - suffixLength);
+        end = bytes.length - 1;
+      } else {
+        start = Number(match[1]);
+        end = match[2] ? Math.min(Number(match[2]), bytes.length - 1) : bytes.length - 1;
+      }
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start >= bytes.length || end < start) {
+        return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${bytes.length}`, 'Accept-Ranges': 'bytes' } });
+      }
+      const chunk = bytes.slice(start, end + 1);
+      return new Response(chunk, {
+        status: 206,
+        headers: {
+          'Content-Type': response.headers.get('content-type') || 'audio/wav',
+          'Cache-Control': 'private, no-store',
+          'X-Content-Type-Options': 'nosniff',
+          'Content-Disposition': 'inline',
+          'Accept-Ranges': 'bytes',
+          'Content-Length': String(chunk.length),
+          'Content-Range': `bytes ${start}-${end}/${bytes.length}`,
+        },
+      });
+    }
+
     const headers = new Headers({
       'Content-Type': response.headers.get('content-type') || 'audio/wav',
       'Cache-Control': 'private, no-store',
       'X-Content-Type-Options': 'nosniff',
       'Content-Disposition': 'inline',
+      'Accept-Ranges': 'bytes',
     });
     const length = response.headers.get('content-length');
     if (length) headers.set('Content-Length', length);
-    const acceptRanges = response.headers.get('accept-ranges');
-    if (acceptRanges) headers.set('Accept-Ranges', acceptRanges);
     const contentRange = response.headers.get('content-range');
     if (contentRange) headers.set('Content-Range', contentRange);
     return new Response(response.body, { status: response.status, headers });
